@@ -51,7 +51,10 @@ end of a session.
   rely on zeroed memory.
 - Boot ROM: `rom/mkboot.py`, built into `work/arnold16.rom`. It loads a
   program from the serial port (format in `tools/mkload.py`).
-- Demo: `demo/mkdemo.py` builds the 68000 program and the Z80 cartridge. The
+- Demo: `demo/mkdemo.py` builds the 68000 program and a disc (`work/demo.dsk`,
+  via `tools/mkdsk.py`) holding the Z80 side as DISC.BIN at &4000. CPCEC
+  boots a 6128 to BASIC and types RUN"DISC itself, so the demo starts about
+  160 frames into a run (`START` in `tests/test_demo.py`). The
   Z80 side scans the keyboard and writes the sound chip without the firmware.
 - Assemblers: `asm/m68k.py` and `asm/z80.py`. When adding an instruction form
   to `asm/m68k.py`, add a case to `tests/test_asm.py`, which checks it against

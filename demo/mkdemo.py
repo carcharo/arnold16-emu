@@ -4,17 +4,22 @@
     python3 demo/mkdemo.py work
 
 writes two files into the directory given:
-  demo.cpr   a Plus cartridge holding the Z80 side
+  demo.dsk   a CPC disc holding the Z80 side as DISC.BIN
   demo.a16   the 68000 program, wrapped for the boot ROM's serial loader
 
 Run it with
-    work/cpcec --arnold16 --a16-serial-in work/demo.a16 -m3 work/demo.cpr
+    work/cpcec --arnold16 --a16-serial-in work/demo.a16 -m2 work/demo.dsk
 
-The Z80 side programs the CRTC, starts the 68000 with the new display on, and
-then serves it for ever: it scans the keyboard and sends a KEY message for
-every key that goes down or up, writes the AY sound chip when asked
-(AY_WRITE), and hands the machine back to the CPC on EXIT. It also logs what
-it does to the printer port, which the tests read.
+CPCEC boots the 6128 to BASIC and types RUN"DISC itself. On a real machine,
+type RUN"DISC.
+
+The Z80 side loads at &4000 from BASIC. It takes over the machine (no
+firmware from then on), programs the CRTC, starts the 68000 with the new
+display on, and then serves it: it scans the keyboard and sends a KEY message
+for every key that goes down or up, writes the AY sound chip when asked
+(AY_WRITE), and on EXIT puts the 68000 back into reset and resets the CPC,
+which comes back to the BASIC start-up screen. It also logs what it does to
+the printer port, which the tests read.
 
 The 68000 side fills the 512 x 256 bitmap with a pattern, scrolls it one pixel
 per frame, moves three sprites across it, and lets the cursor keys steer a
@@ -33,6 +38,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "tools"))
 from m68k import *  # noqa: E402,F403
 from z80 import Asm as Z80  # noqa: E402
 from mkload import wrap  # noqa: E402
+from mkdsk import DiskImage  # noqa: E402
 
 # --- hardware, from the spec ------------------------------------------------
 PORT_CTRL, PORT_STATUS, PORT_CMD, PORT_DATA = 0xF9E1, 0xF9E2, 0xF9E3, 0xF9E4
@@ -293,14 +299,16 @@ def program() -> bytes:
 # the CRTC values the CPC firmware sets for a 50 Hz screen, registers 0 to 13
 CRTC = (63, 40, 46, 142, 38, 0, 25, 30, 0, 7, 0, 0, 48, 0)
 PRINTER = 0xEF00
+Z80_LOAD = 0x4000               # where DISC.BIN loads and starts
 Z_LINE = 0x8100                 # variable: keyboard line being scanned
 Z_PREVIOUS = 0x8000             # ten bytes: the keyboard lines as last seen
 
 
 def z80_program() -> bytes:
-    a = Z80(org=0)
-    a.di()
+    a = Z80(org=Z80_LOAD)
+    a.di()                                  # the firmware is not used from here on
     a.ld_sp(0xC000)
+    a.ld_bc(0xFA7E); a.xor_a(); a.out_c_a()         # disc motor off: AMSDOS would, but its ticker is stopped
     for register, value in enumerate(CRTC):
         a.ld_bc(0xBC00); a.ld_a(register); a.out_c_a()
         a.ld_bc(0xBD00); a.ld_a(value); a.out_c_a()
@@ -324,7 +332,8 @@ def z80_program() -> bytes:
     a.cp_n(CMD_EXIT); a.jr_nz("keys")
     a.ld_bc(PORT_CTRL); a.xor_a(); a.out_c_a()      # 68000 into reset, CPC screen back
     a.ld_hl("s_exit"); a.call("puts")
-    a.label("stop"); a.jr("stop")                   # a real loader would return to BASIC here
+    a.ld_bc(0x7F89); a.out_c_c()                    # lower ROM on, upper off, mode 1, as at power-on ...
+    a.jp(0)                                         # ... and the firmware's reset: back to BASIC
 
     a.label("keys")
     a.call("scan")
@@ -409,11 +418,11 @@ def z80_program() -> bytes:
     return a.assemble()
 
 
-def cartridge(code: bytes) -> bytes:
-    """Wrap a Z80 program as a one-page Plus cartridge (.cpr, a RIFF file)."""
-    page = code.ljust(16384, b"\0")
-    body = b"AMS!" + b"cb00" + struct.pack("<I", len(page)) + page
-    return b"RIFF" + struct.pack("<I", len(body)) + body
+def disc(code: bytes) -> bytes:
+    """Put the Z80 program on a CPC disc as DISC.BIN, loaded and started at Z80_LOAD."""
+    image = DiskImage()
+    image.add_file("DISC.BIN", code, load_addr=Z80_LOAD, exec_addr=Z80_LOAD)
+    return image.to_dsk_bytes()
 
 
 def main() -> int:
@@ -421,8 +430,8 @@ def main() -> int:
         print(__doc__)
         return 2
     out = sys.argv[1]
-    with open(os.path.join(out, "demo.cpr"), "wb") as f:
-        f.write(cartridge(z80_program()))
+    with open(os.path.join(out, "demo.dsk"), "wb") as f:
+        f.write(disc(z80_program()))
     with open(os.path.join(out, "demo.a16"), "wb") as f:
         f.write(wrap(program(), LOAD_ADDRESS))
     return 0

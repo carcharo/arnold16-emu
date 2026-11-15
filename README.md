@@ -12,9 +12,11 @@ script fetches them.
 
 ## Status
 
-The emulator runs the proof-of-concept demo: a 68000 program, loaded by the
-boot ROM, scrolls a 256-colour bitmap under four sprites. The cursor keys
-steer the ball, SPACE beeps, ESC hands the machine back to the CPC.
+The emulator runs the proof-of-concept demo. A CPC 6128 boots to BASIC and
+runs `RUN"DISC` from a disc image; that starts the 68000, whose program,
+loaded by the boot ROM, scrolls a 256-colour bitmap under four sprites. The
+cursor keys steer the ball, SPACE beeps, ESC hands the machine back to the
+CPC, which resets to BASIC.
 
 ![The demo](docs/demo.png)
 
@@ -26,14 +28,13 @@ steer the ball, SPACE beeps, ESC hands the machine back to the CPC.
 | 2 | 68000 core with 1 MB RAM, boot ROM and debug serial output | Done, tested |
 | 3 | PING answered by 68000 code in the boot ROM, through the mailbox interrupt | Done, tested |
 | 4 | Video chip: 320 x 200 window on a 512 x 256 bitmap in 256 colours, scrolling, 32 sprites, frame and raster interrupts | Done, tested |
-
 | 5 | Serial input and a boot ROM that loads a 68000 program from it | Done, tested |
 | 6 | The demo: keyboard, sound and exit through the mailbox (KEY, AY_WRITE, EXIT) | Done, tested |
+| 7 | The demo starts from CPC BASIC, from a disc image, and EXIT resets back to BASIC | Done, tested |
 
 Not done yet:
 
-- Starting the demo from CPC BASIC. For now the Z80 side is a Plus cartridge
-  that starts the 68000 at once.
+- Loading the 68000 program from disc. It still comes in on the serial port.
 
 ## Build and test
 
@@ -45,7 +46,7 @@ Needs git, a C compiler, SDL2 and Python 3.
     make test
 
 `make` fetches CPCEC and Musashi, applies the patches, and builds `work/cpcec`,
-the boot ROM `work/arnold16.rom` and the demo (`work/demo.cpr`,
+the boot ROM `work/arnold16.rom` and the demo (`work/demo.dsk`,
 `work/demo.a16`).
 
 `make test` runs five tests:
@@ -91,9 +92,10 @@ then.
 | `patches/0002-arnold16.patch` | The Arnold 16 hardware. Adds `cpcec-a16.h` and a few hook lines in `cpcec.c`. |
 | `tools/mkpatch.sh` | Regenerates `patches/0002-arnold16.patch` from `work/src` |
 | `tools/mkload.py` | Wraps a 68000 program for the boot ROM's serial loader |
+| `tools/mkdsk.py` | Writes CPC `.dsk` disc images (AMSDOS Data format). Copied from the [zxbasic fork](https://github.com/carcharo/zxbasic) `tools/cpc/mkdsk.py` at `c4720b1`; AGPL-3.0-or-later, which GPL-3.0 section 13 allows alongside this repo's GPL-3.0. |
 | `tools/dis68k.c` | A disassembler built from Musashi, used to test the assembler |
 | `rom/mkboot.py` | Builds the 68000 boot ROM |
-| `demo/mkdemo.py` | Builds the demo: the 68000 program and the Z80 cartridge that serves it |
+| `demo/mkdemo.py` | Builds the demo: the 68000 program, and the disc with the Z80 program that serves it |
 | `asm/m68k.py` | A small 68000 assembler in Python |
 | `asm/z80.py` | A very small Z80 assembler in Python |
 | `tests/` | The five tests. `test_video.py` and `demo/mkdemo.py` are worked examples of driving the hardware. |

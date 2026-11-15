@@ -17,7 +17,7 @@ test: all
 	python3 tests/test_demo.py
 
 demo: all
-	work/cpcec --arnold16 --a16-serial-in work/demo.a16 -m3 work/demo.cpr
+	work/cpcec --arnold16 --a16-serial-in work/demo.a16 -m2 work/demo.dsk
 
 clean:
 	rm -rf work
