@@ -53,14 +53,13 @@ another install, set `M68K` to its tool prefix, for example
 the boot ROM `work/arnold16.rom` and the demo (`work/demo.dsk`,
 `work/demo.a16`).
 
-`make test` runs five tests:
+`make test` runs four tests:
 
 | Test | What it checks |
 | --- | --- |
-| `tests/test_asm.py` | The Python 68000 assembler, against Musashi's disassembler |
 | `tests/test_ping.py` | Ports, mailbox and boot ROM: a Z80 program sends PING, the 68000 answers |
 | `tests/test_boot.py` | The boot ROM clears RAM and video RAM; VID_STAT bits are cleared by writing 1, not by reading |
-| `tests/test_video.py` | The video chip: a 68000 test ROM draws a picture; single pixels of a screenshot are checked |
+| `tests/test_video.py` | The video chip: a 68000 test ROM (`tests/test_video.s`) draws a picture; single pixels of a screenshot are checked |
 | `tests/test_demo.py` | The demo end to end, with scripted key presses |
 
 ## Running it
@@ -97,13 +96,12 @@ then.
 | `tools/mkpatch.sh` | Regenerates `patches/0002-arnold16.patch` from `work/src` |
 | `tools/mkload.py` | Wraps a 68000 program for the boot ROM's serial loader |
 | `tools/mkdsk.py` | Writes CPC `.dsk` disc images (AMSDOS Data format). Copied from the [zxbasic fork](https://github.com/carcharo/zxbasic) `tools/cpc/mkdsk.py` at `c4720b1`; AGPL-3.0-or-later, which GPL-3.0 section 13 allows alongside this repo's GPL-3.0. |
-| `tools/dis68k.c` | A disassembler built from Musashi, used to test the assembler |
 | `rom/boot.s` | The 68000 boot ROM, in GNU as syntax |
 | `rom/a16.inc` | Arnold 16 hardware addresses for 68000 code, from the spec |
-| `demo/mkdemo.py` | Builds the demo: the 68000 program, and the disc with the Z80 program that serves it |
-| `asm/m68k.py` | A small 68000 assembler in Python |
+| `demo/demo.s` | The demo's 68000 program |
+| `demo/mkdemo.py` | Builds the rest of the demo: the disc with the Z80 program that serves the 68000, and the 68000 program's palette, sprite images and shared constants |
 | `asm/z80.py` | A very small Z80 assembler in Python |
-| `tests/` | The five tests. `test_video.py` and `demo/mkdemo.py` are worked examples of driving the hardware. |
+| `tests/` | The four tests, and the 68000 programs two of them run (`test_video.s`, `test_boot.s`). `test_video.s` and `demo/demo.s` are worked examples of driving the hardware. |
 
 ## Changing the emulator
 
@@ -116,10 +114,12 @@ regenerate the patch:
 `fetch_build.sh` resets `work/src` to the clean pinned commit every time. It
 stops first if `work/src` holds edits that are not in the patch yet.
 
-The 68000 and Z80 code is written with the two small Python assemblers in
-`asm/`, so that nothing but Python is needed to build. They cover only what
-has been needed so far. A real assembler would be the better tool once there
-is more 68000 code than this.
+68000 code is assembled with GNU as (`m68k-elf-as -m68000
+--register-prefix-optional`): Motorola register names, but hex is written
+`0x...` (GNU as reads `$FF2003` as a symbol name) and `|` starts a comment
+anywhere on a line, even inside an expression, so use `+` rather than `|` to
+combine bit fields. `rom/a16.inc` holds the hardware addresses. The small Z80
+side is still written with the Python assembler in `asm/z80.py`.
 
 CPCEC's sources use Windows line endings. Editors and scripts must keep them,
 or the patch will rewrite every line.

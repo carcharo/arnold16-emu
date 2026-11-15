@@ -2,7 +2,8 @@
 """The Arnold 16 video chip: bitmap, scrolling with wrap, palette, border,
 sprites, and the frame and raster interrupts.
 
-A 68000 test ROM (built here, loaded with --a16-rom) sets up one picture. A
+A 68000 test ROM (tests/test_video.s, built by fetch_build.sh into
+work/test-video.rom and loaded with --a16-rom) sets up one picture. A
 Z80 cartridge programs the CRTC as the CPC firmware would, then starts the
 68000 with the new display switched on. CPCEC saves a screenshot at frame 60
 and this script checks single pixels in it.
@@ -34,20 +35,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "asm"))
 from z80 import Asm as Z80  # noqa: E402
-from m68k import *  # noqa: E402,F403
 from test_ping import cartridge  # noqa: E402
 
 DEFAULT_EMU = os.path.join(HERE, "..", "work", "cpcec")
 
-# 68000 addresses, from the hardware spec
-VRAM = 0xE00000
-PATTERNS = 0xE20000
-VID_CTRL, VID_STAT, SCROLL_X, SCROLL_Y = 0xFF0000, 0xFF0002, 0xFF0004, 0xFF0006
-RASTER_LINE, BORDER = 0xFF0008, 0xFF000C
-SPRITES, PALETTE = 0xFF0100, 0xFF0200
-VECTOR_RASTER, VECTOR_FRAME = 0x70, 0x78   # autovectors, levels 4 and 6
+TEST_ROM = os.path.join(HERE, "..", "work", "test-video.rom")
 
-# palette entries used by the test: index -> 0RGB
+# palette entries test_video.s sets: index -> 0RGB
 COLOURS = {0: 0x888, 1: 0xFFF, 3: 0xF00, 4: 0x00F, 5: 0x0F0, 6: 0xFF0, 7: 0x0FF}
 BLACK = 0x000
 
@@ -55,75 +49,6 @@ BLACK = 0x000
 def rgb(c: int) -> tuple[int, int, int]:
     """A 12-bit 0RGB colour as the 24-bit colour the screenshot should hold."""
     return ((c >> 8) * 17, ((c >> 4) & 15) * 17, (c & 15) * 17)
-
-
-def test_rom() -> bytes:
-    a = Asm(org=0xF00000)
-    a.l(0x100000)
-    a.l("start")
-    a.label("start")
-
-    # bitmap: 128 KB, each byte = low 8 bits of its address = its x position & 255
-    a.lea(absl(VRAM), A0)
-    a.move("l", imm(0x20000 - 1), D1)
-    a.label("fill")
-    a.move("w", A0, D0)
-    a.move("b", D0, inc(A0))
-    a.subq("l", 1, D1)
-    a.bpl("fill")
-    a.move("b", imm(6), absl(VRAM + 1 * 512 + 5))    # the marker: bitmap (5,1) = colour 6
-
-    # sprite patterns: 2 = all colour 7 with a transparent first pixel per row,
-    # 3 = all colour 4
-    a.lea(absl(PATTERNS + 2 * 256), A0)
-    a.moveq(15, D1)
-    a.label("pattern2_row")
-    a.clr("b", inc(A0))
-    a.moveq(14, D0)
-    a.label("pattern2_pixel")
-    a.move("b", imm(7), inc(A0))
-    a.dbra(D0, "pattern2_pixel")
-    a.dbra(D1, "pattern2_row")
-    a.move("w", imm(255), D0)                        # pattern 3 follows pattern 2
-    a.label("pattern3")
-    a.move("b", imm(4), inc(A0))
-    a.dbra(D0, "pattern3")
-
-    for index, colour in COLOURS.items():
-        a.move("w", imm(colour), absl(PALETTE + index * 2))
-
-    def sprite(n: int, x: int, y: int, pattern: int, flags: int) -> None:
-        base = SPRITES + n * 8
-        a.move("w", imm(x), absl(base))
-        a.move("w", imm(y), absl(base + 2))
-        a.move("w", imm((pattern << 8) | flags), absl(base + 4))
-
-    sprite(0, 100, 50, 2, 1)       # visible
-    sprite(1, 200, 50, 2, 3)       # visible, flipped left to right
-    sprite(5, 108, 50, 3, 1)       # overlaps sprite 0 by 8 pixels
-    sprite(6, -8, 100, 3, 1)       # half off the left edge
-
-    a.move("w", imm(509), absl(SCROLL_X))
-    a.move("w", imm(254), absl(SCROLL_Y))
-    a.move("w", imm(100), absl(RASTER_LINE))
-    a.move("l", imm("raster"), absl(VECTOR_RASTER))
-    a.move("l", imm("frame"), absl(VECTOR_FRAME))
-    a.move("w", imm(0x000F), absl(VID_CTRL))   # display, sprites, frame and raster interrupts
-    a.label("idle")
-    a.stop(0x2000)
-    a.bra("idle")
-
-    a.label("frame")                     # level 6: the picture has ended
-    a.move("w", imm(2), absl(VID_STAT))  # write 1 to bit 1: drops the frame interrupt only
-    a.move("w", imm(5), absl(BORDER))    # green
-    a.rte()
-
-    a.label("raster")                    # level 4: line 100 starts
-    a.move("w", imm(4), absl(VID_STAT))  # write 1 to bit 2: drops the raster interrupt only
-    a.move("w", imm(1), absl(BORDER))    # white
-    a.rte()
-
-    return a.assemble().ljust(0x10000, b"\xFF")
 
 
 # the CRTC values the CPC firmware sets for a 50 Hz screen, registers 0 to 13
@@ -192,13 +117,14 @@ def main() -> int:
     if not os.path.exists(emu):
         print(f"no emulator at {emu}: run ./fetch_build.sh first")
         return 2
+    if not os.path.exists(TEST_ROM):
+        print(f"no {TEST_ROM}: run ./fetch_build.sh first")
+        return 2
     tmp = tempfile.mkdtemp()
-    cpr, rom, shot = (os.path.join(tmp, n) for n in ("t.cpr", "t.rom", "t.png"))
+    cpr, shot = (os.path.join(tmp, n) for n in ("t.cpr", "t.png"))
     with open(cpr, "wb") as f:
         f.write(cartridge(z80_program()))
-    with open(rom, "wb") as f:
-        f.write(test_rom())
-    subprocess.run([emu, "--headless", "--arnold16", "--a16-rom", rom,
+    subprocess.run([emu, "--headless", "--arnold16", "--a16-rom", os.path.abspath(TEST_ROM),
                     "--shot", shot, "--shot-at", "60", "--max-frames", "62",
                     "-m3", cpr],
                    cwd=os.path.dirname(emu), stdout=subprocess.DEVNULL,
@@ -263,7 +189,7 @@ def main() -> int:
     if failed:
         print(f"screenshot kept at {shot} ({width}x{height})")
     else:
-        for path in (cpr, rom, shot):
+        for path in (cpr, shot):
             os.unlink(path)
         os.rmdir(tmp)
     return 1 if failed else 0

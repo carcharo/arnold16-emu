@@ -10,7 +10,6 @@ all:
 	sh fetch_build.sh
 
 test: all
-	python3 tests/test_asm.py
 	python3 tests/test_ping.py
 	python3 tests/test_boot.py
 	python3 tests/test_video.py

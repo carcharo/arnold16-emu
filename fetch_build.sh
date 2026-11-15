@@ -48,8 +48,6 @@ fi
 cc -w -o m68kmake m68kmake.c
 ./m68kmake >/dev/null
 cc -w -O2 -c m68kcpu.c m68kops.c softfloat/softfloat.c
-# a disassembler, used only to test our Python 68000 assembler
-cc -w -O2 -I. -o ../dis68k "$HERE/tools/dis68k.c" m68kdasm.c
 cd ..
 if [ ! -d src/.git ]; then
     git clone -q https://github.com/cpcitor/cpcec src
@@ -103,9 +101,25 @@ rm -f ../cpcec
 cp cpcec ../cpcec
 for f in cpc464.rom cpc664.rom cpc6128.rom cpcados.rom cpcplus.rom; do cp "$f" ..; done
 cp gpl.txt ../LICENSE.cpcec-gpl3
-# the boot ROM: GNU as, linked at $F00000 into a raw 64 KB image
-"${M68K}as" -m68000 --register-prefix-optional -I "$HERE/rom" -o ../boot.o "$HERE/rom/boot.s"
-"${M68K}ld" -e start -Ttext=0xF00000 --oformat=binary -o ../arnold16.rom ../boot.o
-rm -f ../boot.o
-python3 "$HERE/demo/mkdemo.py" ..
+cd ..
+# 68000 code. asm68k SOURCE ADDRESS OUTPUT assembles SOURCE with GNU as and
+# links it at ADDRESS into a raw binary. Includes come from rom/ (a16.inc) and
+# work/ (files made by Python).
+asm68k() {
+    "${M68K}as" -m68000 --register-prefix-optional -I "$HERE/rom" -I . -o "$3.o" "$1"
+    "${M68K}ld" -e start -Ttext="$2" --oformat=binary -o "$3" "$3.o"
+    rm -f "$3.o"
+}
+# a program for the boot ROM's serial loader: assembled, then wrapped
+asm68k_load() {
+    asm68k "$1" "$2" "$3.bin"
+    python3 "$HERE/tools/mkload.py" "$3.bin" "$2" "$3"
+    rm -f "$3.bin"
+}
+asm68k "$HERE/rom/boot.s" 0xF00000 arnold16.rom           # the boot ROM, 64 KB
+python3 "$HERE/demo/mkdemo.py" .                          # Z80 disc, tables for demo.s
+asm68k_load "$HERE/demo/demo.s" 0x1000 demo.a16
+asm68k "$HERE/tests/test_video.s" 0xF00000 test-video.rom # test programs
+asm68k_load "$HERE/tests/test_boot.s" 0x1000 test-boot.a16
+cd src
 echo "cpcec at $(git rev-parse HEAD) with $(ls "$HERE"/patches/*.patch | wc -l | tr -d ' ') patches: $(cd .. && pwd)/cpcec"
