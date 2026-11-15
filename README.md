@@ -61,6 +61,7 @@ then.
 | `fetch_build.sh` | Fetches CPCEC at the pinned commit, applies `patches/` in order, builds |
 | `patches/0001-cpcbuild-headless.patch` | Options for unattended test runs (`--headless`, `--printer`, `--max-frames`, ...). Copied from [CPCBuild](https://github.com/carcharo/cpcbuild) `tools/cpcec`. |
 | `patches/0002-arnold16.patch` | The Arnold 16 hardware. Adds `cpcec-a16.h` and a few hook lines in `cpcec.c`. |
+| `tools/mkpatch.sh` | Regenerates `patches/0002-arnold16.patch` from `work/src` |
 | `rom/mkboot.py` | Builds the 68000 boot ROM |
 | `rom/m68k.py` | A very small 68000 assembler used by `mkboot.py` |
 | `tests/test_ping.py` | The ports, mailbox and boot ROM test |
@@ -70,16 +71,9 @@ then.
 
 Edit the files under `work/src` (after a build they are the patched CPCEC
 sources), rebuild with the `cc` line from `fetch_build.sh`, and when it works
-regenerate `patches/0002-arnold16.patch`. It must hold only the Arnold 16
-changes, so take the difference against a tree that has patch 0001 applied:
+regenerate the patch:
 
-    cd work/src
-    git stash -u                      # set your edits aside
-    git apply ../../patches/0001-cpcbuild-headless.patch
-    git add -A && git commit -qm "patch 0001"
-    git stash pop                     # bring your edits back
-    git add cpcec.c cpcec-a16.h
-    git diff --cached > ../../patches/0002-arnold16.patch
+    sh tools/mkpatch.sh
 
 Careful: `fetch_build.sh` resets `work/src` to the clean pinned commit every
 time, so save the patch before running `make` again.
