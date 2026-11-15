@@ -32,9 +32,9 @@ import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-sys.path.insert(0, os.path.join(HERE, "..", "rom"))
+sys.path.insert(0, os.path.join(HERE, "..", "asm"))
 from z80 import Asm as Z80  # noqa: E402
-from m68k import Asm as M68K  # noqa: E402
+from m68k import *  # noqa: E402,F403
 from test_ping import cartridge  # noqa: E402
 
 DEFAULT_EMU = os.path.join(HERE, "..", "work", "cpcec")
@@ -58,63 +58,69 @@ def rgb(c: int) -> tuple[int, int, int]:
 
 
 def test_rom() -> bytes:
-    a = M68K(org=0xF00000)
+    a = Asm(org=0xF00000)
     a.l(0x100000)
     a.l("start")
     a.label("start")
 
     # bitmap: 128 KB, each byte = low 8 bits of its address = its x position & 255
-    a.lea_abs_a0(VRAM)
-    a.move_l_imm_d1(0x20000 - 1)
+    a.lea(absl(VRAM), A0)
+    a.move("l", imm(0x20000 - 1), D1)
     a.label("fill")
-    a.move_w_a0_d0()
-    a.move_b_d0_a0inc()
-    a.subq_l_1_d1()
-    a.bpl_s("fill")
-    a.move_b_imm_abs(6, VRAM + 1 * 512 + 5)          # the marker: bitmap (5,1) = colour 6
+    a.move("w", A0, D0)
+    a.move("b", D0, inc(A0))
+    a.subq("l", 1, D1)
+    a.bpl("fill")
+    a.move("b", imm(6), absl(VRAM + 1 * 512 + 5))    # the marker: bitmap (5,1) = colour 6
 
     # sprite patterns: 2 = all colour 7 with a transparent first pixel per row,
     # 3 = all colour 4
-    a.lea_abs_a0(PATTERNS + 2 * 256)
-    for _row in range(16):
-        a.move_b_imm_a0inc(0)
-        for _ in range(15):
-            a.move_b_imm_a0inc(7)
-    for _ in range(256):                              # pattern 3 follows pattern 2
-        a.move_b_imm_a0inc(4)
+    a.lea(absl(PATTERNS + 2 * 256), A0)
+    a.moveq(15, D1)
+    a.label("pattern2_row")
+    a.clr("b", inc(A0))
+    a.moveq(14, D0)
+    a.label("pattern2_pixel")
+    a.move("b", imm(7), inc(A0))
+    a.dbra(D0, "pattern2_pixel")
+    a.dbra(D1, "pattern2_row")
+    a.move("w", imm(255), D0)                        # pattern 3 follows pattern 2
+    a.label("pattern3")
+    a.move("b", imm(4), inc(A0))
+    a.dbra(D0, "pattern3")
 
     for index, colour in COLOURS.items():
-        a.move_w_imm_abs(colour, PALETTE + index * 2)
+        a.move("w", imm(colour), absl(PALETTE + index * 2))
 
     def sprite(n: int, x: int, y: int, pattern: int, flags: int) -> None:
         base = SPRITES + n * 8
-        a.move_w_imm_abs(x & 0xFFFF, base)
-        a.move_w_imm_abs(y & 0xFFFF, base + 2)
-        a.move_w_imm_abs((pattern << 8) | flags, base + 4)
+        a.move("w", imm(x), absl(base))
+        a.move("w", imm(y), absl(base + 2))
+        a.move("w", imm((pattern << 8) | flags), absl(base + 4))
 
     sprite(0, 100, 50, 2, 1)       # visible
     sprite(1, 200, 50, 2, 3)       # visible, flipped left to right
     sprite(5, 108, 50, 3, 1)       # overlaps sprite 0 by 8 pixels
     sprite(6, -8, 100, 3, 1)       # half off the left edge
 
-    a.move_w_imm_abs(509, SCROLL_X)
-    a.move_w_imm_abs(254, SCROLL_Y)
-    a.move_w_imm_abs(100, RASTER_LINE)
-    a.move_l_imm_absw("raster", VECTOR_RASTER)
-    a.move_l_imm_absw("frame", VECTOR_FRAME)
-    a.move_w_imm_abs(0x000F, VID_CTRL)   # display, sprites, frame and raster interrupts
+    a.move("w", imm(509), absl(SCROLL_X))
+    a.move("w", imm(254), absl(SCROLL_Y))
+    a.move("w", imm(100), absl(RASTER_LINE))
+    a.move("l", imm("raster"), absl(VECTOR_RASTER))
+    a.move("l", imm("frame"), absl(VECTOR_FRAME))
+    a.move("w", imm(0x000F), absl(VID_CTRL))   # display, sprites, frame and raster interrupts
     a.label("idle")
     a.stop(0x2000)
-    a.bra_s("idle")
+    a.bra("idle")
 
     a.label("frame")                     # level 6: the picture has ended
-    a.move_w_abs_d0(VID_STAT)            # reading it drops the interrupt
-    a.move_w_imm_abs(5, BORDER)          # green
+    a.tst("w", absl(VID_STAT))           # reading it drops the interrupt
+    a.move("w", imm(5), absl(BORDER))    # green
     a.rte()
 
     a.label("raster")                    # level 4: line 100 starts
-    a.move_w_abs_d0(VID_STAT)
-    a.move_w_imm_abs(1, BORDER)          # white
+    a.tst("w", absl(VID_STAT))
+    a.move("w", imm(1), absl(BORDER))    # white
     a.rte()
 
     return a.assemble().ljust(0x10000, b"\xFF")

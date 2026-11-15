@@ -1,5 +1,5 @@
-"""A very small Z80 assembler for the test programs: just the instructions the
-tests use, with labels. Not a general tool.
+"""A very small Z80 assembler for the tests and the demo's Z80 side: just the
+instructions they use, with labels. Not a general tool.
 
     a = Asm(org=0)
     a.label("loop"); a.ld_a(1); a.jr("loop")
@@ -86,3 +86,41 @@ class Asm:
     def jr(self, target: str): self._rel(0x18, target)
     def jr_nz(self, target: str): self._rel(0x20, target)
     def jr_z(self, target: str): self._rel(0x28, target)
+    def jr_c(self, target: str): self._rel(0x38, target)
+    def jr_nc(self, target: str): self._rel(0x30, target)
+    def djnz(self, target: str): self._rel(0x10, target)
+
+    # --- added for the demo's Z80 side ------------------------------------
+    def ei(self): self.db(0xFB)
+    def xor_a(self): self.db(0xAF)
+    def xor_e(self): self.db(0xAB)
+    def cpl(self): self.db(0x2F)
+    def add_a_a(self): self.db(0x87)
+    def inc_a(self): self.db(0x3C)
+    def inc_c(self): self.db(0x0C)
+    def cp_n(self, n: int): self.db(0xFE, n)
+    def ld_b(self, n: int): self.db(0x06, n)
+    def ld_h(self, n: int): self.db(0x26, n)
+    def ld_a_e(self): self.db(0x7B)
+    def ld_a_h(self): self.db(0x7C)
+    def ld_a_l(self): self.db(0x7D)
+    def ld_c_a(self): self.db(0x4F)
+    def ld_d_a(self): self.db(0x57)
+    def ld_e_a(self): self.db(0x5F)
+    def ld_h_a(self): self.db(0x67)
+    def ld_l_a(self): self.db(0x6F)
+    def ld_l_c(self): self.db(0x69)
+    def ld_hl_e(self): self.db(0x73)             # ld (hl),e
+    def ld_a_mem(self, nn: int): self._abs(0x3A, nn)   # ld a,(nn)
+    def ld_mem_a(self, nn: int): self._abs(0x32, nn)   # ld (nn),a
+    def srl_d(self): self.db(0xCB, 0x3A)
+    def srl_e(self): self.db(0xCB, 0x3B)
+    def push_bc(self): self.db(0xC5)
+    def push_de(self): self.db(0xD5)
+    def pop_bc(self): self.db(0xC1)
+    def pop_de(self): self.db(0xD1)
+    def out_c_c(self): self.db(0xED, 0x49)       # out (c),c
+    def out_c_d(self): self.db(0xED, 0x51)       # out (c),d
+    def out_c_e(self): self.db(0xED, 0x59)       # out (c),e
+    def out_c_h(self): self.db(0xED, 0x61)       # out (c),h
+    def out_c_l(self): self.db(0xED, 0x69)       # out (c),l

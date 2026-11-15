@@ -17,8 +17,9 @@ the authority: if the code and the spec disagree, stop and ask which is right.
 - Every change ships with a test in `tests/` that runs real Z80 (later 68000)
   code headless and checks its output. `make test` must pass from a clean
   checkout (`make clean && make test`) before committing.
-- `fetch_build.sh` wipes `work/src` back to the pinned commit. Regenerate the
-  patch before running it.
+- `fetch_build.sh` wipes `work/src` back to the pinned commit. Run
+  `sh tools/mkpatch.sh` after every edit there, before any `make`. The script
+  refuses to wipe unsaved edits, but do not rely on it.
 - Licence is GPL-3.0. Anything added (for example a 68000 core) must be
   GPL-compatible; check and record its licence before adding it.
 - Git: work on `main` unless asked otherwise. Explain any git step that is not
@@ -41,6 +42,11 @@ the authority: if the code and the spec disagree, stop and ask which is right.
   and palette are in the memory callbacks.
 - Interrupt levels: frame 6, raster 4, mailbox 2; `a16_irq()` picks the
   highest that is pending and enabled.
-- Boot ROM: `rom/mkboot.py`, built into `work/arnold16.rom`. `rom/m68k.py`
-  knows only the instructions the ROM uses; add encodings with care and check
-  each against the 68000 manual.
+- Boot ROM: `rom/mkboot.py`, built into `work/arnold16.rom`. It loads a
+  program from the serial port (format in `tools/mkload.py`).
+- Demo: `demo/mkdemo.py` builds the 68000 program and the Z80 cartridge. The
+  Z80 side scans the keyboard and writes the sound chip without the firmware.
+- Assemblers: `asm/m68k.py` and `asm/z80.py`. When adding an instruction form
+  to `asm/m68k.py`, add a case to `tests/test_asm.py`, which checks it against
+  Musashi's disassembler.
+- Serial input and `--a16-keys` exist for loading programs and for tests.

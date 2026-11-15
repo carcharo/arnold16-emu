@@ -23,10 +23,10 @@ import subprocess
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "asm"))
 from z80 import Asm  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EMU = os.path.join(HERE, "..", "work", "cpcec")
 
 ID, CTRL, STATUS, MBOX_CMD, MBOX_DATA = 0xF9E0, 0xF9E1, 0xF9E2, 0xF9E3, 0xF9E4
@@ -143,7 +143,7 @@ def run(emu: str, cpr: str, arnold: bool) -> tuple[str, str]:
 
 
 EXPECT_ARNOLD = "ID=16\nST=01\nCMD=7F\nDATA=DEADBEEF\nST=01\n\x04END\n"
-EXPECT_SERIAL = "Arnold 16 boot ROM v0.1\n"
+EXPECT_SERIAL = "Arnold 16 boot ROM v0.2\n"
 EXPECT_PLAIN = "ID=FF\nST=FF\nCMD=FF\nDATA=FFFFFFFF\nST=FF\n\x04END\n"
 
 

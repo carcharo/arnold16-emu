@@ -4,7 +4,8 @@
 # cpcec.c and cpcec-a16.h with a fresh copy of the pinned CPCEC commit that has
 # patch 0001 applied. work/src itself is not changed.
 #
-#   sh tools/mkpatch.sh
+#   sh tools/mkpatch.sh            write patches/0002-arnold16.patch
+#   sh tools/mkpatch.sh FILE       write the patch to FILE instead, quietly
 set -e
 cd "$(dirname "$0")/.."
 HERE=$(pwd)
@@ -18,5 +19,10 @@ git add -A
 git -c user.email=mkpatch@localhost -c user.name=mkpatch commit -qm "patch 0001"
 cp "$HERE/work/src/cpcec.c" "$HERE/work/src/cpcec-a16.h" .
 git add -A
-git diff --cached > "$HERE/patches/0002-arnold16.patch"
-git diff --cached --stat
+if [ -n "$1" ]; then
+    case "$1" in /*) OUT=$1 ;; *) OUT=$HERE/$1 ;; esac
+    git diff --cached > "$OUT"
+else
+    git diff --cached > "$HERE/patches/0002-arnold16.patch"
+    git diff --cached --stat
+fi

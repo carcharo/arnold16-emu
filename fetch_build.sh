@@ -30,9 +30,25 @@ fi
 cc -w -o m68kmake m68kmake.c
 ./m68kmake >/dev/null
 cc -w -O2 -c m68kcpu.c m68kops.c softfloat/softfloat.c
+# a disassembler, used only to test our Python 68000 assembler
+cc -w -O2 -I. -o ../dis68k "$HERE/tools/dis68k.c" m68kdasm.c
 cd ..
 if [ ! -d src/.git ]; then
     git clone -q https://github.com/cpcitor/cpcec src
+fi
+# work/src is about to be wiped. If it holds edits that are not in the patch
+# yet, stop rather than lose them.
+if [ -f src/cpcec-a16.h ] && [ -z "$FORCE" ]; then
+    T=$(mktemp)
+    sh "$HERE/tools/mkpatch.sh" "$T"
+    if ! cmp -s "$T" "$HERE/patches/0002-arnold16.patch"; then
+        rm -f "$T"
+        echo "fetch_build.sh: work/src differs from patches/0002-arnold16.patch." >&2
+        echo "  To keep your edits: sh tools/mkpatch.sh, then run this again." >&2
+        echo "  To discard them (or after pulling a newer patch): make clean, or FORCE=1 sh fetch_build.sh" >&2
+        exit 1
+    fi
+    rm -f "$T"
 fi
 cd src
 # always start from the clean pinned commit, so the result never depends on
@@ -66,4 +82,5 @@ cp cpcec ../cpcec
 for f in cpc464.rom cpc664.rom cpc6128.rom cpcados.rom cpcplus.rom; do cp "$f" ..; done
 cp gpl.txt ../LICENSE.cpcec-gpl3
 python3 "$HERE/rom/mkboot.py" ../arnold16.rom
+python3 "$HERE/demo/mkdemo.py" ..
 echo "cpcec at $(git rev-parse HEAD) with $(ls "$HERE"/patches/*.patch | wc -l | tr -d ' ') patches: $(cd .. && pwd)/cpcec"

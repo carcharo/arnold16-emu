@@ -1,9 +1,9 @@
 diff --git a/cpcec-a16.h b/cpcec-a16.h
 new file mode 100644
-index 0000000..d972e02
+index 0000000..1c13356
 --- /dev/null
 +++ b/cpcec-a16.h
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,325 @@
 +// Arnold 16 additions to CPCEC (GPLv3, like the rest of this file set).
 +// Hardware spec: arnold16-docs, spec/hardware-spec-v0.2.md.
 +// Everything here is inert unless --arnold16 is given: without it the eight
@@ -13,13 +13,19 @@ index 0000000..d972e02
 +//   --a16-rom FILE      68000 boot ROM image, up to 64 KB (default: arnold16.rom
 +//                       beside the emulator)
 +//   --a16-serial FILE   write what the 68000 sends to its debug serial port to FILE
++//   --a16-serial-in FILE  feed FILE's bytes to the 68000's serial port; the boot
++//                       ROM loads a program from it (see tools/mkload.py). The
++//                       file is read from its start each time the 68000 starts.
++//   --a16-keys LIST     for tests: press and release CPC keys at given frames.
++//                       LIST is FRAME:KEY:STATE,... with KEY a CPC key number
++//                       and STATE 1 (down) or 0 (up), e.g. 100:47:1,110:47:0
 +//
 +// What is here: the Z80 ports at &F9E0-&F9E7, the mailbox, a 68000 with RAM,
 +// boot ROM and a write-only debug serial port, and the video chip (320x200
 +// window on a 512x256 bitmap in 256 colours, scrolling, 32 sprites, frame and
 +// raster interrupts). The 68000 is Musashi (Karl Stenerud, MIT licence), built
 +// separately and linked in.
-+// Not here yet: serial input.
++// Serial input has no speed: a byte is there whenever the 68000 looks.
 +
 +#include <string.h>
 +#include <stdio.h>
@@ -46,7 +52,7 @@ index 0000000..d972e02
 +#define A16_MBOX_STAT 0xFF1003 // bit 0: message from the Z80 waiting; bit 1: last message to the Z80 unread
 +#define A16_MBOX_DATA 0xFF1004 // four bytes, $FF1004-$FF1007
 +#define A16_SER_DATA 0xFF2001
-+#define A16_SER_STAT 0xFF2003 // bit 0: a byte has arrived (never, so far); bit 1: the port can send
++#define A16_SER_STAT 0xFF2003 // bit 0: a byte has arrived; bit 1: the port can send
 +#define A16_IRQ_MAILBOX 2 // 68000 interrupt levels
 +#define A16_IRQ_RASTER 4
 +#define A16_IRQ_FRAME 6
@@ -72,8 +78,10 @@ index 0000000..d972e02
 +#define A16_CYCLES_PER_TICK 8 // 68000 at 8 MHz; CPCEC counts time in microseconds (1 tick = 4 Z80 clock cycles)
 +
 +char a16_enabled=0;
-+const char *a16_rom_path=NULL,*a16_serial_path=NULL;
-+FILE *a16_serial=NULL;
++const char *a16_rom_path=NULL,*a16_serial_path=NULL,*a16_serin_path=NULL,*a16_keys=NULL;
++FILE *a16_serial=NULL,*a16_serin=NULL;
++int a16_serin_byte=-1; // the byte waiting at the serial port, or -1
++long a16_frame_no=0;
 +BYTE a16_ctrl; // CTRL register
 +BYTE a16_to68k_cmd,a16_to68k_data[4],a16_to68k_full; // Z80 -> 68000 message
 +BYTE a16_from68k_cmd,a16_from68k_data[4],a16_from68k_full; // 68000 -> Z80 message
@@ -94,6 +102,8 @@ index 0000000..d972e02
 +		if (!strcmp(argv[i],"--arnold16")) a16_enabled=1;
 +		else if (v&&!strcmp(argv[i],"--a16-rom")) a16_rom_path=argv[++i];
 +		else if (v&&!strcmp(argv[i],"--a16-serial")) a16_serial_path=argv[++i];
++		else if (v&&!strcmp(argv[i],"--a16-serial-in")) a16_serin_path=argv[++i];
++		else if (v&&!strcmp(argv[i],"--a16-keys")) a16_keys=argv[++i];
 +		else argv[o++]=argv[i];
 +	}
 +	*argc=o;
@@ -115,6 +125,12 @@ index 0000000..d972e02
 +	a16_rgb[i]=video_xlat_rgb((r*17<<16)+(g*17<<8)+b*17);
 +}
 +
++int a16_serin_peek(void) // is a byte waiting at the serial port?
++{
++	if (a16_serin_byte<0&&a16_serin) a16_serin_byte=fgetc(a16_serin); // EOF is -1 too
++	return a16_serin_byte>=0;
++}
++
 +// memory map of the 68000, as Musashi's callbacks; the 68000 is big-endian
 +
 +unsigned int m68k_read_memory_8(unsigned int a)
@@ -127,7 +143,8 @@ index 0000000..d972e02
 +	if (a==A16_MBOX_CMD) { a16_to68k_full=0; a16_irq(); return a16_to68k_cmd; }
 +	if (a==A16_MBOX_STAT) return (a16_to68k_full?1:0)+(a16_from68k_full?2:0);
 +	if (a>=A16_MBOX_DATA&&a<A16_MBOX_DATA+4) return a16_to68k_data[a-A16_MBOX_DATA];
-+	if (a==A16_SER_STAT) return 2; // can always send; nothing ever arrives
++	if (a==A16_SER_STAT) return 2+a16_serin_peek(); // can always send
++	if (a==A16_SER_DATA) { int b=a16_serin_peek()?a16_serin_byte:0; a16_serin_byte=-1; return b; }
 +	if (a>=A16_VREG_BASE&&a<A16_VREG_BASE+16)
 +	{
 +		a-=A16_VREG_BASE;
@@ -175,6 +192,10 @@ index 0000000..d972e02
 +{
 +	if (!a16_rom_loaded) a16_rom_load();
 +	if (a16_serial_path&&!a16_serial) a16_serial=fopen(a16_serial_path,"wb");
++	if (a16_serin_path&&!a16_serin&&!(a16_serin=fopen(a16_serin_path,"rb")))
++		fprintf(stderr,"arnold16: cannot open %s\n",a16_serin_path);
++	if (a16_serin) rewind(a16_serin);
++	a16_serin_byte=-1;
 +	if (!a16_cpu_ready)
 +		m68k_init(),m68k_set_cpu_type(M68K_CPU_TYPE_68000),a16_cpu_ready=1;
 +	memset(a16_ram,0,sizeof(a16_ram)); memset(a16_vram,0,sizeof(a16_vram));
@@ -292,12 +313,21 @@ index 0000000..d972e02
 +
 +void a16_frame(void) // once per emulated frame
 +{
++	++a16_frame_no;
++	for (const char *k=a16_keys;k&&*k;) // scripted key presses, for tests
++	{
++		long f; int key,down,n=0;
++		if (sscanf(k,"%ld:%d:%d%n",&f,&key,&down,&n)<3) break;
++		if (f==a16_frame_no&&key>=0&&key<80) { if (down) kbd_bit_set(key); else kbd_bit_res(key); }
++		k+=n; if (*k==',') ++k;
++	}
 +	if (a16_serial) fflush(a16_serial); // so a watcher of the file sees the output at once
 +}
 +
 +void a16_exit(void)
 +{
 +	if (a16_serial) fclose(a16_serial),a16_serial=NULL;
++	if (a16_serin) fclose(a16_serin),a16_serin=NULL;
 +}
 diff --git a/cpcec.c b/cpcec.c
 index 5f79c9b..9bc7469 100644
