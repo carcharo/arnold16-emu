@@ -48,12 +48,13 @@ Needs git, a C compiler, SDL2 and Python 3.
 the boot ROM `work/arnold16.rom` and the demo (`work/demo.cpr`,
 `work/demo.a16`).
 
-`make test` runs four tests:
+`make test` runs five tests:
 
 | Test | What it checks |
 | --- | --- |
 | `tests/test_asm.py` | The Python 68000 assembler, against Musashi's disassembler |
 | `tests/test_ping.py` | Ports, mailbox and boot ROM: a Z80 program sends PING, the 68000 answers |
+| `tests/test_boot.py` | The boot ROM clears RAM and video RAM; VID_STAT bits are cleared by writing 1, not by reading |
 | `tests/test_video.py` | The video chip: a 68000 test ROM draws a picture; single pixels of a screenshot are checked |
 | `tests/test_demo.py` | The demo end to end, with scripted key presses |
 
@@ -95,7 +96,7 @@ then.
 | `demo/mkdemo.py` | Builds the demo: the 68000 program and the Z80 cartridge that serves it |
 | `asm/m68k.py` | A small 68000 assembler in Python |
 | `asm/z80.py` | A very small Z80 assembler in Python |
-| `tests/` | The four tests. `test_video.py` and `demo/mkdemo.py` are worked examples of driving the hardware. |
+| `tests/` | The five tests. `test_video.py` and `demo/mkdemo.py` are worked examples of driving the hardware. |
 
 ## Changing the emulator
 

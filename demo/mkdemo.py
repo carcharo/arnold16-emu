@@ -245,7 +245,7 @@ def program() -> bytes:
 
     # --- interrupts -------------------------------------------------------
     a.label("frame")               # level 6: the picture has ended
-    a.tst("w", absl(VID_STAT))     # reading it drops the interrupt
+    a.move("w", imm(2), absl(VID_STAT))  # write 1 to bit 1: drops the frame interrupt
     a.move("b", imm(1), absl(V_TICK))
     a.rte()
 

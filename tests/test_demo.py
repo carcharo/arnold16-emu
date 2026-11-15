@@ -31,7 +31,7 @@ WORK = os.path.abspath(os.path.join(HERE, "..", "work"))
 # frame:key:state. CURSOR RIGHT held for frames 100-130, SPACE tapped, then ESC.
 KEYS = "100:1:1,130:1:0,160:47:1,170:47:0,200:66:1"
 
-EXPECT_SERIAL = "Arnold 16 boot ROM v0.2\nProgram loaded\n"
+EXPECT_SERIAL = "Arnold 16 boot ROM v0.3\nProgram loaded\n"
 EXPECT_LOG = ("K0101\n"                      # CURSOR RIGHT down, sent to the 68000
               "K0100\n"                      # ... and up
               "K2F01\n"                      # SPACE down

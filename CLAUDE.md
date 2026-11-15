@@ -1,7 +1,7 @@
 # arnold16-emu: brief for AI sessions
 
 Read `README.md` first. The hardware this emulates is defined in the private
-repo `carcharo/arnold16-docs`, file `spec/hardware-spec-v0.2.md`. The spec is
+repo `carcharo/arnold16-docs`, file `spec/hardware-spec-v0.3.md`. The spec is
 the authority: if the code and the spec disagree, stop and ask which is right.
 Project status and next steps are in that repo's `STATUS.md`; update it at the
 end of a session.
@@ -44,6 +44,11 @@ end of a session.
   and palette are in the memory callbacks.
 - Interrupt levels: frame 6, raster 4, mailbox 2; `a16_irq()` picks the
   highest that is pending and enabled.
+  Frame and raster are acknowledged by writing 1 to their VID_STAT bit;
+  reading VID_STAT changes nothing.
+- RAM and video RAM start full of junk (`a16_start()`), as on real hardware.
+  The boot ROM clears them, so test ROMs that skip the boot ROM must not
+  rely on zeroed memory.
 - Boot ROM: `rom/mkboot.py`, built into `work/arnold16.rom`. It loads a
   program from the serial port (format in `tools/mkload.py`).
 - Demo: `demo/mkdemo.py` builds the 68000 program and the Z80 cartridge. The

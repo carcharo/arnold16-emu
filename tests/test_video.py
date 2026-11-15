@@ -114,12 +114,12 @@ def test_rom() -> bytes:
     a.bra("idle")
 
     a.label("frame")                     # level 6: the picture has ended
-    a.tst("w", absl(VID_STAT))           # reading it drops the interrupt
+    a.move("w", imm(2), absl(VID_STAT))  # write 1 to bit 1: drops the frame interrupt only
     a.move("w", imm(5), absl(BORDER))    # green
     a.rte()
 
     a.label("raster")                    # level 4: line 100 starts
-    a.tst("w", absl(VID_STAT))
+    a.move("w", imm(4), absl(VID_STAT))  # write 1 to bit 2: drops the raster interrupt only
     a.move("w", imm(1), absl(BORDER))    # white
     a.rte()
 

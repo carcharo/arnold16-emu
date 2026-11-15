@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Builds the Arnold 16 boot ROM, version 0.2.
+"""Builds the Arnold 16 boot ROM, version 0.3.
 
     python3 rom/mkboot.py work/arnold16.rom
 
 What the ROM does:
-  1. prints a banner on the debug serial port,
-  2. points the mailbox interrupt (level 2 autovector) at its handler and
-     allows interrupts,
-  3. waits for a program on the serial port, copies it into RAM and jumps to
+  1. clears the exception vectors ($000008 to $0003FF), points the mailbox
+     interrupt (level 2 autovector) at its handler and allows interrupts,
+  2. prints a banner on the debug serial port,
+  3. clears the rest of RAM and all of video RAM, so a program can rely on
+     them starting at zero (RAM holds junk at power-on). This takes about
+     0.55 s; PING is answered meanwhile,
+  4. waits for a program on the serial port, copies it into RAM and jumps to
      it (the format is in tools/mkload.py).
 While it waits, the mailbox handler takes every message from the Z80. It
 answers PING (&7F) with the same four data bytes and drops everything else.
@@ -30,6 +33,9 @@ ROM_BASE = 0xF00000
 ROM_SIZE = 0x10000
 STACK_TOP = 0x100000          # top of the 1 MB of RAM
 VECTOR_LEVEL2 = 0x68          # autovector for interrupt level 2
+VECTORS_END = 0x400           # end of the 68000 exception vector table
+VRAM = 0xE00000
+VRAM_SIZE = 0x40000           # 256 KB
 
 MBOX_CMD = 0xFF1001
 MBOX_STAT = 0xFF1003
@@ -39,7 +45,7 @@ SER_STAT = 0xFF2003
 
 PING = 0x7F
 LOAD_MAGIC = 0x4131364C       # "A16L"
-BANNER = "Arnold 16 boot ROM v0.2\n"
+BANNER = "Arnold 16 boot ROM v0.3\n"
 
 
 def build() -> bytes:
@@ -48,10 +54,28 @@ def build() -> bytes:
     a.l("start")                           # reset: start address
 
     a.label("start")
-    a.lea(pc("banner"), A0)
-    a.bsr("puts")
+    a.moveq(0, D4)                         # D4 stays zero while clearing
+    a.lea(absl(8), A3)                     # the vectors first ($000000-7 is the ROM)
+    a.move("w", imm((VECTORS_END - 8) // 4 - 1), D5)
+    a.label("clear_vectors")
+    a.move("l", D4, inc(A3))
+    a.dbra(D5, "clear_vectors")
     a.move("l", imm("mailbox"), absl(VECTOR_LEVEL2))
     a.move_to_sr(0x2000)                   # supervisor mode, all interrupts allowed
+    a.lea(pc("banner"), A0)
+    a.bsr("puts")
+
+    # --- clear RAM and video RAM, 32 bytes a time ---------------------------
+    # Not in a subroutine: the stack at the top of RAM is cleared too, which is
+    # safe only while nothing is on it. The mailbox handler saves and restores
+    # what it uses, so it may run in between.
+    for name, start, end in (("ram", VECTORS_END, STACK_TOP), ("vram", VRAM, VRAM + VRAM_SIZE)):
+        a.lea(absl(start), A3)
+        a.move("w", imm((end - start) // 32 - 1), D5)
+        a.label("clear_" + name)
+        for _ in range(8):
+            a.move("l", D4, inc(A3))
+        a.dbra(D5, "clear_" + name)
 
     # --- serial loader ----------------------------------------------------
     a.moveq(0, D1)

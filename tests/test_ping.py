@@ -143,7 +143,7 @@ def run(emu: str, cpr: str, arnold: bool) -> tuple[str, str]:
 
 
 EXPECT_ARNOLD = "ID=16\nST=01\nCMD=7F\nDATA=DEADBEEF\nST=01\n\x04END\n"
-EXPECT_SERIAL = "Arnold 16 boot ROM v0.2\n"
+EXPECT_SERIAL = "Arnold 16 boot ROM v0.3\n"
 EXPECT_PLAIN = "ID=FF\nST=FF\nCMD=FF\nDATA=FFFFFFFF\nST=FF\n\x04END\n"
 
 
