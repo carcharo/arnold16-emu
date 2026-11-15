@@ -1,0 +1,157 @@
+diff --git a/cpcec-a16.h b/cpcec-a16.h
+new file mode 100644
+index 0000000..46985e6
+--- /dev/null
++++ b/cpcec-a16.h
+@@ -0,0 +1,98 @@
++// Arnold 16 additions to CPCEC (GPLv3, like the rest of this file set).
++// Hardware spec: arnold16-docs, spec/hardware-spec-v0.1.md.
++// Everything here is inert unless --arnold16 is given: without it the eight
++// ports answer like any unused port and CPCEC behaves as upstream.
++//
++//   --arnold16   enable the Arnold 16 hardware
++//
++// Step 1 (this file): the Z80 ports at &F9E0-&F9E7 and the mailbox. There is
++// no 68000 yet. A stand-in, a16_stub(), plays its part: once RUN is set it
++// takes each message the Z80 sends and answers PING (&7F) with the same
++// command and data. It will be replaced by the real CPU.
++
++#include <string.h>
++
++#define A16_PORT_BASE 0xF9E0 // eight ports, all 16 address bits decoded
++#define A16_ID 0x16
++#define A16_CTRL_RUN 1 // CTRL bit 0: 1 releases the 68000 from reset
++#define A16_CTRL_DISPLAY 2 // CTRL bit 1: 1 shows the new video chip (not built yet)
++#define A16_STAT_RUNNING 1 // STATUS bit 0: 68000 is running
++#define A16_STAT_FROM68K 2 // STATUS bit 1: a message from the 68000 is waiting
++#define A16_STAT_TO68K 4 // STATUS bit 2: the last message to the 68000 has not been read
++#define A16_CMD_PING 0x7F
++
++char a16_enabled=0;
++BYTE a16_ctrl; // CTRL register
++BYTE a16_to68k_cmd,a16_to68k_data[4],a16_to68k_full; // Z80 -> 68000 message
++BYTE a16_from68k_cmd,a16_from68k_data[4],a16_from68k_full; // 68000 -> Z80 message
++
++void a16_args(int *argc,char **argv) // strip and act on "--arnold16"; everything else is left alone
++{
++	int i=1,o=1; for (;i<*argc;++i)
++		if (!strcmp(argv[i],"--arnold16")) a16_enabled=1;
++		else argv[o++]=argv[i];
++	*argc=o;
++}
++
++void a16_reset(void) // a CPC reset always returns the machine to a plain CPC
++{
++	a16_ctrl=a16_to68k_full=a16_from68k_full=0;
++	a16_to68k_cmd=a16_from68k_cmd=0;
++	memset(a16_to68k_data,0,4); memset(a16_from68k_data,0,4);
++}
++
++#define a16_port(p) (a16_enabled&&((p)&0xFFF8)==A16_PORT_BASE)
++
++void a16_send(int r,BYTE b) // the Z80 writes register `r` (0-7)
++{
++	switch (r)
++	{
++		case 1: // CTRL
++			if (!(b&A16_CTRL_RUN)) // holding the 68000 in reset empties the mailbox
++				a16_to68k_full=a16_from68k_full=0;
++			a16_ctrl=b&(A16_CTRL_RUN|A16_CTRL_DISPLAY);
++			break;
++		case 3: // MBOX_CMD: send the command, with the data bytes written before it
++			a16_to68k_cmd=b,a16_to68k_full=1;
++			break;
++		case 4: case 5: case 6: case 7: // MBOX_DATA
++			a16_to68k_data[r-4]=b;
++			break;
++	}
++}
++
++BYTE a16_recv(int r) // the Z80 reads register `r` (0-7)
++{
++	switch (r)
++	{
++		case 0: // ID
++			return A16_ID;
++		case 1: // CTRL
++			return a16_ctrl;
++		case 2: // STATUS
++			return ((a16_ctrl&A16_CTRL_RUN)?A16_STAT_RUNNING:0)
++				+(a16_from68k_full?A16_STAT_FROM68K:0)
++				+(a16_to68k_full?A16_STAT_TO68K:0);
++		case 3: // MBOX_CMD: take the waiting command
++			a16_from68k_full=0;
++			return a16_from68k_cmd;
++		default: // MBOX_DATA
++			return a16_from68k_data[r-4];
++	}
++}
++
++void a16_stub(void) // stand-in for the 68000 until the real CPU is added
++{
++	if (!(a16_ctrl&A16_CTRL_RUN)||!a16_to68k_full)
++		return; // in reset, or nothing to read
++	if (a16_to68k_cmd==A16_CMD_PING)
++	{
++		if (a16_from68k_full)
++			return; // the Z80 has not taken the last reply yet: there is no queue
++		a16_from68k_cmd=A16_CMD_PING; memcpy(a16_from68k_data,a16_to68k_data,4);
++		a16_from68k_full=1;
++	}
++	a16_to68k_full=0; // message read
++}
++
++#define a16_main(t) do{ if (a16_enabled) a16_stub(); }while(0) // called whenever the hardware catches up with the Z80
+diff --git a/cpcec.c b/cpcec.c
+index 5f79c9b..3d91897 100644
+--- a/cpcec.c
++++ b/cpcec.c
+@@ -103,6 +103,7 @@ unsigned char audio_surround=0; // ditto
+ #define CB_PART 1
+ #include "cpcec-cb.h" // CPCBuild: unattended-run options
+ #include "cpcec-rt.h" // emulation framework!
++#include "cpcec-a16.h" // Arnold 16: ports and mailbox
+ 
+ int litegun=0; // 0 = standard joystick, 1 = Trojan Light Phaser, 2 = Gunstick (MHT), 3 = Westphaser (Loriciel)
+ const unsigned char kbd_map_xlt[]=
+@@ -1298,6 +1299,7 @@ void z80_sync(int t) // the Z80 asks the hardware/video/audio to catch up
+ 	static int r=0; main_t+=t;
+ 	//if (!disc_disabled) // redundant, in most cases disc_main() does nothing
+ 		disc_main(t);
++	a16_main(t); // Arnold 16
+ 	if (tape_enabled&&tape)
+ 		audio_dirty|=tape_loud,tape_main(t); // echo the tape signal thru sound!
+ 	t=(r+=t)>>multi_t; r&=multi_u; // calculate base value of `t` and keep remainder
+@@ -1469,6 +1471,7 @@ void z80_send(WORD p,BYTE b) // the Z80 sends a byte to a hardware port
+ 			tape_output=tape_type<0&&(pio_port_c&32); // tape record signal
+ 		}
+ 	}
++	if (a16_port(p)) a16_send(p&7,b); // Arnold 16, 0xF9E0-0xF9E7
+ 	if (!(p&0x0400)) // 0xF800-0xFBFF, miscellaneous
+ 	{
+ 		if (!(p&0x0080)) // 0xFB7F, FDC 765
+@@ -2055,6 +2058,7 @@ BYTE z80_recv(WORD p) // the Z80 receives a byte from a hardware port
+ 		}
+ 		#endif
+ 	}
++	if (a16_port(p)) b&=a16_recv(p&7); // Arnold 16, 0xF9E0-0xF9E7
+ 	return p==0xFEFE?0xCE:b; // emulator ID styled after the old CPCE
+ }
+ 
+@@ -2478,6 +2482,7 @@ void all_reset(void) // reset everything!
+ 	MEMZERO(autorun_kbd);
+ 	crtc_reset();
+ 	plus_reset();
++	a16_reset(); // Arnold 16
+ 	gate_reset();
+ 	tape_reset();
+ 	disc_reset();
+@@ -3974,7 +3979,7 @@ void session_configwritemore(FILE *f) // update the configuration file `f` with
+ 
+ int main(int argc,char *argv[])
+ {
+-	cb_args(&argc,argv); session_prae(ARGVZERO); all_setup(); all_reset();
++	a16_args(&argc,argv); cb_args(&argc,argv); session_prae(ARGVZERO); all_setup(); all_reset();
+ 	int i=0,j,k=0; while (++i<argc)
+ 		if (argv[i][0]=='-')
+ 		{
