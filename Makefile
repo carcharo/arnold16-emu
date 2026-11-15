@@ -10,6 +10,7 @@ all:
 
 test: all
 	python3 tests/test_ping.py
+	python3 tests/test_video.py
 
 clean:
 	rm -rf work

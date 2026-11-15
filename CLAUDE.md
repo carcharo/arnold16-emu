@@ -1,7 +1,7 @@
 # arnold16-emu: brief for AI sessions
 
 Read `README.md` first. The hardware this emulates is defined in the private
-repo `carcharo/arnold16-docs`, file `spec/hardware-spec-v0.1.md`. The spec is
+repo `carcharo/arnold16-docs`, file `spec/hardware-spec-v0.2.md`. The spec is
 the authority: if the code and the spec disagree, stop and ask which is right.
 
 ## Rules
@@ -33,8 +33,14 @@ the authority: if the code and the spec disagree, stop and ask which is right.
 - Reset: `a16_reset()`, called from `all_reset()`.
 - 68000: Musashi, pinned in `fetch_build.sh`, MIT licence. Its memory map is
   the `m68k_read_memory_8()` and `m68k_write_memory_8()` callbacks in
-  `cpcec-a16.h`. It runs 2 cycles per CPC clock tick (8 MHz against 4 MHz).
-- Mailbox interrupt: level 2, raised while a message from the Z80 is unread.
+  `cpcec-a16.h`. It runs 8 cycles per CPCEC tick: CPCEC counts time in
+  microseconds, not Z80 clock cycles.
+- Video chip: `a16_scanline()`, called from `video_main()` when the CPC ends a
+  scan line. It draws the line over the CPC's picture (`a16_draw()`), counts
+  lines and raises the frame and raster interrupts. Registers, sprite table
+  and palette are in the memory callbacks.
+- Interrupt levels: frame 6, raster 4, mailbox 2; `a16_irq()` picks the
+  highest that is pending and enabled.
 - Boot ROM: `rom/mkboot.py`, built into `work/arnold16.rom`. `rom/m68k.py`
   knows only the instructions the ROM uses; add encodings with care and check
   each against the 68000 manual.

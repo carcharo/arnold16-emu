@@ -12,17 +12,21 @@ script fetches them.
 
 ## Status
 
-Steps 1 to 3 of 4 are done.
+All four first steps are done. The picture below is the video test: a
+scrolled bitmap, four sprites, and a border colour changed twice per frame by
+the 68000's raster and frame interrupts.
+
+![The video test picture](docs/video-test.png)
 
 | Step | What | State |
 | --- | --- | --- |
 | 1 | Z80 ports `&F9E0` to `&F9E7` and the mailbox | Done, tested |
 | 2 | 68000 core with 1 MB RAM, boot ROM and debug serial output | Done, tested |
 | 3 | PING answered by 68000 code in the boot ROM, through the mailbox interrupt | Done, tested |
-| 4 | New video chip: bitmap, scrolling, sprites | Not started |
+| 4 | Video chip: 320 x 200 window on a 512 x 256 bitmap in 256 colours, scrolling, 32 sprites, frame and raster interrupts | Done, tested |
 
-Not built yet: the video chip (its RAM is plain memory, its registers read as
-zero), serial input, and the KEY, AY_WRITE and EXIT mailbox commands.
+Not built yet: serial input (so no way to load 68000 programs except as a ROM
+image), and the KEY, AY_WRITE and EXIT mailbox commands.
 
 ## Build and test
 
@@ -37,7 +41,9 @@ Needs git, a C compiler, SDL2 and Python 3.
 the boot ROM `work/arnold16.rom`. `make test` then runs a real Z80 program
 that starts the 68000 and sends PING through the mailbox. It checks that the
 boot ROM printed its banner on the serial port and answered, and that with
-Arnold 16 switched off the machine is a plain CPC.
+Arnold 16 switched off the machine is a plain CPC. A second test loads a
+68000 test ROM that draws a picture, takes a screenshot and checks single
+pixels in it.
 
 ## Running it
 
@@ -65,6 +71,7 @@ then.
 | `rom/mkboot.py` | Builds the 68000 boot ROM |
 | `rom/m68k.py` | A very small 68000 assembler used by `mkboot.py` |
 | `tests/test_ping.py` | The ports, mailbox and boot ROM test |
+| `tests/test_video.py` | The video chip test; also a worked example of driving the chip from 68000 code |
 | `tests/z80.py` | A very small Z80 assembler used by the tests |
 
 ## Changing the emulator

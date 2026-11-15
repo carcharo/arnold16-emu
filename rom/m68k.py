@@ -110,3 +110,30 @@ class Asm:
 
     def btst_imm_abs(self, bit: int, addr: int):  # btst #bit,addr
         self.w(0x0839, bit); self.l(addr)
+
+    # --- added for the video tests ------------------------------------------
+    def bpl_s(self, target: str): self._bcc(0x6A, target)
+
+    def lea_abs_a0(self, addr: int):              # lea addr,a0
+        self.w(0x41F9); self.l(addr)
+
+    def move_w_a0_d0(self):                       # move.w a0,d0
+        self.w(0x3008)
+
+    def move_b_d0_a0inc(self):                    # move.b d0,(a0)+
+        self.w(0x10C0)
+
+    def move_b_imm_a0inc(self, value: int):       # move.b #value,(a0)+
+        self.w(0x10FC, value & 255)
+
+    def move_l_imm_d1(self, value: int):          # move.l #value,d1
+        self.w(0x223C); self.l(value)
+
+    def subq_l_1_d1(self):                        # subq.l #1,d1
+        self.w(0x5381)
+
+    def move_w_imm_abs(self, value: int, addr: int):   # move.w #value,addr
+        self.w(0x33FC, value); self.l(addr)
+
+    def move_w_abs_d0(self, addr: int):           # move.w addr,d0
+        self.w(0x3039); self.l(addr)
