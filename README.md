@@ -38,10 +38,14 @@ Not done yet:
 
 ## Build and test
 
-Needs git, a C compiler, SDL2 and Python 3.
+Needs git, a C compiler, SDL2, Python 3 and GNU binutils for the 68000.
 
-    brew install sdl2            # macOS
-    sudo apt install libsdl2-dev # Ubuntu
+    brew install sdl2 m68k-elf-binutils                    # macOS
+    sudo apt install libsdl2-dev binutils-m68k-linux-gnu  # Ubuntu
+
+`fetch_build.sh` finds the 68000 tools itself, Homebrew's first. To use
+another install, set `M68K` to its tool prefix, for example
+`M68K=/path/to/bin/m68k-elf- make`.
 
     make test
 
@@ -94,7 +98,8 @@ then.
 | `tools/mkload.py` | Wraps a 68000 program for the boot ROM's serial loader |
 | `tools/mkdsk.py` | Writes CPC `.dsk` disc images (AMSDOS Data format). Copied from the [zxbasic fork](https://github.com/carcharo/zxbasic) `tools/cpc/mkdsk.py` at `c4720b1`; AGPL-3.0-or-later, which GPL-3.0 section 13 allows alongside this repo's GPL-3.0. |
 | `tools/dis68k.c` | A disassembler built from Musashi, used to test the assembler |
-| `rom/mkboot.py` | Builds the 68000 boot ROM |
+| `rom/boot.s` | The 68000 boot ROM, in GNU as syntax |
+| `rom/a16.inc` | Arnold 16 hardware addresses for 68000 code, from the spec |
 | `demo/mkdemo.py` | Builds the demo: the 68000 program, and the disc with the Z80 program that serves it |
 | `asm/m68k.py` | A small 68000 assembler in Python |
 | `asm/z80.py` | A very small Z80 assembler in Python |

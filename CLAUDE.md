@@ -49,7 +49,12 @@ end of a session.
 - RAM and video RAM start full of junk (`a16_start()`), as on real hardware.
   The boot ROM clears them, so test ROMs that skip the boot ROM must not
   rely on zeroed memory.
-- Boot ROM: `rom/mkboot.py`, built into `work/arnold16.rom`. It loads a
+- 68000 code is GNU as (`m68k-elf-as -m68000 --register-prefix-optional`):
+  Motorola register names, but hex is `0x...` (no `$`) and comments start
+  with `|`. Hardware addresses are in `rom/a16.inc`; keep it in step with the
+  spec. `fetch_build.sh` finds the tools (Homebrew first, since an older
+  `m68k-elf-` may be earlier on PATH) or takes the prefix from `$M68K`.
+- Boot ROM: `rom/boot.s`, built into `work/arnold16.rom`. It loads a
   program from the serial port (format in `tools/mkload.py`).
 - Demo: `demo/mkdemo.py` builds the 68000 program and a disc (`work/demo.dsk`,
   via `tools/mkdsk.py`) holding the Z80 side as DISC.BIN at &4000. CPCEC

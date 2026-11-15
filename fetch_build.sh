@@ -8,9 +8,27 @@
 #
 #   sh fetch_build.sh      then   work/cpcec --arnold16 ...
 #
-# Needs git, a C compiler, Python 3 and SDL2 (macOS: brew install sdl2;
-# Ubuntu: apt install libsdl2-dev).
+# Needs git, a C compiler, Python 3, SDL2 and GNU binutils for the 68000
+# (macOS: brew install sdl2 m68k-elf-binutils;
+#  Ubuntu: apt install libsdl2-dev binutils-m68k-linux-gnu).
+#
+# M68K is the 68000 tool prefix, for example /opt/homebrew/bin/m68k-elf-. Set
+# it to choose an install; otherwise the first one found below is used.
 set -e
+if [ -z "$M68K" ]; then
+    for p in /opt/homebrew/opt/m68k-elf-binutils/bin/m68k-elf- \
+             /usr/local/opt/m68k-elf-binutils/bin/m68k-elf- \
+             m68k-elf- m68k-linux-gnu-; do
+        if command -v "${p}as" >/dev/null 2>&1; then M68K=$p; break; fi
+    done
+fi
+if [ -z "$M68K" ] || ! command -v "${M68K}as" >/dev/null 2>&1; then
+    echo "fetch_build.sh: no 68000 assembler. Install GNU binutils for m68k:" >&2
+    echo "  macOS:  brew install m68k-elf-binutils" >&2
+    echo "  Ubuntu: sudo apt install binutils-m68k-linux-gnu" >&2
+    echo "or set M68K to the tool prefix (for example M68K=/path/to/m68k-elf-)." >&2
+    exit 1
+fi
 SHA=c025aab961a796b918cc99bc3e16216ea65bb5d1   # cpcitor/cpcec master, release 20260303
 M68K_SHA=313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd   # kstenerud/Musashi master, 2026-03-08
 cd "$(dirname "$0")"
@@ -85,6 +103,9 @@ rm -f ../cpcec
 cp cpcec ../cpcec
 for f in cpc464.rom cpc664.rom cpc6128.rom cpcados.rom cpcplus.rom; do cp "$f" ..; done
 cp gpl.txt ../LICENSE.cpcec-gpl3
-python3 "$HERE/rom/mkboot.py" ../arnold16.rom
+# the boot ROM: GNU as, linked at $F00000 into a raw 64 KB image
+"${M68K}as" -m68000 --register-prefix-optional -I "$HERE/rom" -o ../boot.o "$HERE/rom/boot.s"
+"${M68K}ld" -e start -Ttext=0xF00000 --oformat=binary -o ../arnold16.rom ../boot.o
+rm -f ../boot.o
 python3 "$HERE/demo/mkdemo.py" ..
 echo "cpcec at $(git rev-parse HEAD) with $(ls "$HERE"/patches/*.patch | wc -l | tr -d ' ') patches: $(cd .. && pwd)/cpcec"
