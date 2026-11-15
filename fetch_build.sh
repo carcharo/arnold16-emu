@@ -77,7 +77,11 @@ done
 cc -w -DSDL2 -O2 -xc cpcec.c -I../musashi $INC $(sdl2-config --cflags) \
     -xnone ../musashi/m68kcpu.o ../musashi/m68kops.o ../musashi/softfloat.o \
     $(sdl2-config --libs) -lm -o cpcec
-# the binary looks for its ROM files in its own directory
+# the binary looks for its ROM files in its own directory. Remove the old copy
+# first: on macOS, overwriting a signed binary in place makes the kernel kill
+# the new one (SIGKILL, exit 137) because it no longer matches the cached
+# signature.
+rm -f ../cpcec
 cp cpcec ../cpcec
 for f in cpc464.rom cpc664.rom cpc6128.rom cpcados.rom cpcplus.rom; do cp "$f" ..; done
 cp gpl.txt ../LICENSE.cpcec-gpl3

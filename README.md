@@ -34,9 +34,6 @@ Not done yet:
 
 - Starting the demo from CPC BASIC. For now the Z80 side is a Plus cartridge
   that starts the 68000 at once.
-- Seeing or hearing it on a real screen: every test so far is headless. The
-  beep is checked by what is written to the sound chip, not by ear.
-- Running any of this on a Mac.
 
 ## Build and test
 
