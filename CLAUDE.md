@@ -3,6 +3,8 @@
 Read `README.md` first. The hardware this emulates is defined in the private
 repo `carcharo/arnold16-docs`, file `spec/hardware-spec-v0.2.md`. The spec is
 the authority: if the code and the spec disagree, stop and ask which is right.
+Project status and next steps are in that repo's `STATUS.md`; update it at the
+end of a session.
 
 ## Rules
 
