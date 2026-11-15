@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Step 1 test: the Arnold 16 ports and mailbox, driven from real Z80 code.
+"""The Arnold 16 ports, mailbox and 68000 boot ROM, driven from real Z80 code.
 
 Builds a tiny cartridge whose Z80 program
   1. reads the ID port,
   2. sets RUN and reads STATUS,
   3. sends PING with four data bytes,
   4. waits for the reply and prints it,
-then runs it in the patched CPCEC twice: with --arnold16 (the reply must come
-back) and without (the ports must look unused, as on a plain CPC).
+then runs it in the patched CPCEC twice: with --arnold16 (the 68000 boot ROM
+must print its banner on the serial port and answer the PING) and without (the
+ports must look unused, as on a plain CPC).
 
 The program prints through the CPC printer port, which CPCEC records to a file
 (--printer), and ends the run with the marker CPCBuild's patch understands.
@@ -116,25 +117,33 @@ def cartridge(code: bytes) -> bytes:
     return b"RIFF" + struct.pack("<I", len(body)) + body
 
 
-def run(emu: str, cpr: str, arnold: bool) -> str:
+def run(emu: str, cpr: str, arnold: bool) -> tuple[str, str]:
+    """Run the cartridge; return what it printed and what the 68000 sent to serial."""
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as out:
         printer = out.name
+    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as out:
+        serial = out.name
     try:
         cmd = [emu, "--headless", "--printer", printer, "--end-on-marker",
                "--max-frames", "500"]
         if arnold:
-            cmd.append("--arnold16")
+            cmd += ["--arnold16", "--a16-serial", serial]
         cmd += ["-m3", cpr]
         subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(emu)),
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        timeout=120, check=False)
         with open(printer, "rb") as f:
-            return f.read().decode("ascii", "replace")
+            printed = f.read().decode("ascii", "replace")
+        with open(serial, "rb") as f:
+            sent = f.read().decode("ascii", "replace")
+        return printed, sent
     finally:
         os.unlink(printer)
+        os.unlink(serial)
 
 
 EXPECT_ARNOLD = "ID=16\nST=01\nCMD=7F\nDATA=DEADBEEF\nST=01\n\x04END\n"
+EXPECT_SERIAL = "Arnold 16 boot ROM v0.1\n"
 EXPECT_PLAIN = "ID=FF\nST=FF\nCMD=FF\nDATA=FFFFFFFF\nST=FF\n\x04END\n"
 
 
@@ -148,14 +157,16 @@ def main() -> int:
         cpr = f.name
     failed = 0
     try:
-        for name, arnold, expect in (("with --arnold16", True, EXPECT_ARNOLD),
-                                     ("plain CPC", False, EXPECT_PLAIN)):
-            got = run(emu, cpr, arnold)
-            ok = got == expect
+        for name, arnold, expect, expect_serial in (
+                ("PING answered by the 68000", True, EXPECT_ARNOLD, EXPECT_SERIAL),
+                ("plain CPC is unchanged", False, EXPECT_PLAIN, "")):
+            got, serial = run(emu, cpr, arnold)
+            ok = got == expect and serial == expect_serial
             print(f"{'PASS' if ok else 'FAIL'}  {name}")
             if not ok:
                 failed += 1
-                print(f"  expected {expect!r}\n  got      {got!r}")
+                print(f"  printer: expected {expect!r}\n           got      {got!r}")
+                print(f"  serial:  expected {expect_serial!r}\n           got      {serial!r}")
     finally:
         os.unlink(cpr)
     return 1 if failed else 0

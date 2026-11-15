@@ -31,5 +31,10 @@ the authority: if the code and the spec disagree, stop and ask which is right.
 - Per-step work: `a16_main(t)`, called from `z80_sync()`. This is where the
   68000 will be stepped.
 - Reset: `a16_reset()`, called from `all_reset()`.
-- `a16_stub()` stands in for the 68000 and answers PING. Remove it when the
-  real CPU arrives.
+- 68000: Musashi, pinned in `fetch_build.sh`, MIT licence. Its memory map is
+  the `m68k_read_memory_8()` and `m68k_write_memory_8()` callbacks in
+  `cpcec-a16.h`. It runs 2 cycles per CPC clock tick (8 MHz against 4 MHz).
+- Mailbox interrupt: level 2, raised while a message from the Z80 is unread.
+- Boot ROM: `rom/mkboot.py`, built into `work/arnold16.rom`. `rom/m68k.py`
+  knows only the instructions the ROM uses; add encodings with care and check
+  each against the 68000 manual.

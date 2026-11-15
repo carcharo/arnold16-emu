@@ -1,0 +1,269 @@
+diff --git a/cpcec-a16.h b/cpcec-a16.h
+new file mode 100644
+index 0000000..f2107bf
+--- /dev/null
++++ b/cpcec-a16.h
+@@ -0,0 +1,192 @@
++// Arnold 16 additions to CPCEC (GPLv3, like the rest of this file set).
++// Hardware spec: arnold16-docs, spec/hardware-spec-v0.1.md.
++// Everything here is inert unless --arnold16 is given: without it the eight
++// ports answer like any unused port and CPCEC behaves as upstream.
++//
++//   --arnold16          enable the Arnold 16 hardware
++//   --a16-rom FILE      68000 boot ROM image, up to 64 KB (default: arnold16.rom
++//                       beside the emulator)
++//   --a16-serial FILE   write what the 68000 sends to its debug serial port to FILE
++//
++// Step 2 (this file): the Z80 ports at &F9E0-&F9E7, the mailbox, and a 68000
++// with RAM, boot ROM and a write-only debug serial port. The 68000 is Musashi
++// (Karl Stenerud, MIT licence), built separately and linked in.
++// Not here yet: the video chip (its RAM is plain memory and its registers read
++// as zero) and serial input.
++
++#include <string.h>
++#include <stdio.h>
++#include "m68k.h" // Musashi
++
++// --- Z80 side ------------------------------------------------------------ //
++
++#define A16_PORT_BASE 0xF9E0 // eight ports, all 16 address bits decoded
++#define A16_ID 0x16
++#define A16_CTRL_RUN 1 // CTRL bit 0: 1 releases the 68000 from reset
++#define A16_CTRL_DISPLAY 2 // CTRL bit 1: 1 shows the new video chip (not built yet)
++#define A16_STAT_RUNNING 1 // STATUS bit 0: 68000 is running
++#define A16_STAT_FROM68K 2 // STATUS bit 1: a message from the 68000 is waiting
++#define A16_STAT_TO68K 4 // STATUS bit 2: the last message to the 68000 has not been read
++
++// --- 68000 side ---------------------------------------------------------- //
++
++#define A16_RAM_SIZE 0x100000 // $000000-$0FFFFF main RAM
++#define A16_VRAM_BASE 0xE00000 // $E00000-$E3FFFF video RAM
++#define A16_VRAM_SIZE 0x040000
++#define A16_ROM_BASE 0xF00000 // $F00000-$F0FFFF boot ROM
++#define A16_ROM_SIZE 0x010000
++#define A16_MBOX_CMD 0xFF1001 // read takes the command from the Z80, write sends one
++#define A16_MBOX_STAT 0xFF1003 // bit 0: message from the Z80 waiting; bit 1: last message to the Z80 unread
++#define A16_MBOX_DATA 0xFF1004 // four bytes, $FF1004-$FF1007
++#define A16_SER_DATA 0xFF2001
++#define A16_SER_STAT 0xFF2003 // bit 0: a byte has arrived (never, so far); bit 1: the port can send
++#define A16_IRQ_MAILBOX 2 // 68000 interrupt level of the mailbox
++#define A16_CYCLES_PER_TICK 2 // 68000 at 8 MHz against the CPC's 4 MHz clock
++
++char a16_enabled=0;
++const char *a16_rom_path=NULL,*a16_serial_path=NULL;
++FILE *a16_serial=NULL;
++BYTE a16_ctrl; // CTRL register
++BYTE a16_to68k_cmd,a16_to68k_data[4],a16_to68k_full; // Z80 -> 68000 message
++BYTE a16_from68k_cmd,a16_from68k_data[4],a16_from68k_full; // 68000 -> Z80 message
++BYTE a16_ram[A16_RAM_SIZE],a16_vram[A16_VRAM_SIZE],a16_rom[A16_ROM_SIZE];
++char a16_cpu_ready=0,a16_rom_loaded=0;
++int a16_cycles; // 68000 cycles owed (or, if negative, run ahead)
++
++void a16_args(int *argc,char **argv) // strip and act on the "--a..." options; everything else is left alone
++{
++	int i=1,o=1; for (;i<*argc;++i)
++	{
++		int v=i+1<*argc;
++		if (!strcmp(argv[i],"--arnold16")) a16_enabled=1;
++		else if (v&&!strcmp(argv[i],"--a16-rom")) a16_rom_path=argv[++i];
++		else if (v&&!strcmp(argv[i],"--a16-serial")) a16_serial_path=argv[++i];
++		else argv[o++]=argv[i];
++	}
++	*argc=o;
++}
++
++void a16_irq(void) // the mailbox interrupt stays raised until the 68000 reads MBOX_CMD
++{
++	if (a16_cpu_ready) m68k_set_irq(a16_to68k_full?A16_IRQ_MAILBOX:0);
++}
++
++// memory map of the 68000, as Musashi's callbacks; the 68000 is big-endian
++
++unsigned int m68k_read_memory_8(unsigned int a)
++{
++	a&=0xFFFFFF;
++	if (a<8) return a16_rom[a]; // reset vectors come from the boot ROM
++	if (a<A16_RAM_SIZE) return a16_ram[a];
++	if (a>=A16_VRAM_BASE&&a<A16_VRAM_BASE+A16_VRAM_SIZE) return a16_vram[a-A16_VRAM_BASE];
++	if (a>=A16_ROM_BASE&&a<A16_ROM_BASE+A16_ROM_SIZE) return a16_rom[a-A16_ROM_BASE];
++	if (a==A16_MBOX_CMD) { a16_to68k_full=0; a16_irq(); return a16_to68k_cmd; }
++	if (a==A16_MBOX_STAT) return (a16_to68k_full?1:0)+(a16_from68k_full?2:0);
++	if (a>=A16_MBOX_DATA&&a<A16_MBOX_DATA+4) return a16_to68k_data[a-A16_MBOX_DATA];
++	if (a==A16_SER_STAT) return 2; // can always send; nothing ever arrives
++	return 0; // unlisted addresses read as zero
++}
++void m68k_write_memory_8(unsigned int a,unsigned int b)
++{
++	a&=0xFFFFFF;
++	if (a<A16_RAM_SIZE) a16_ram[a]=b;
++	else if (a>=A16_VRAM_BASE&&a<A16_VRAM_BASE+A16_VRAM_SIZE) a16_vram[a-A16_VRAM_BASE]=b;
++	else if (a==A16_MBOX_CMD) a16_from68k_cmd=b,a16_from68k_full=1;
++	else if (a>=A16_MBOX_DATA&&a<A16_MBOX_DATA+4) a16_from68k_data[a-A16_MBOX_DATA]=b;
++	else if (a==A16_SER_DATA) { if (a16_serial) fputc(b,a16_serial); }
++}
++unsigned int m68k_read_memory_16(unsigned int a) { return (m68k_read_memory_8(a)<<8)+m68k_read_memory_8(a+1); }
++unsigned int m68k_read_memory_32(unsigned int a) { return (m68k_read_memory_16(a)<<16)+m68k_read_memory_16(a+2); }
++void m68k_write_memory_16(unsigned int a,unsigned int b) { m68k_write_memory_8(a,(b>>8)&255); m68k_write_memory_8(a+1,b&255); }
++void m68k_write_memory_32(unsigned int a,unsigned int b) { m68k_write_memory_16(a,(b>>16)&65535); m68k_write_memory_16(a+2,b&65535); }
++
++void a16_rom_load(void) // once, the first time the 68000 is started
++{
++	char path[STRMAX]; FILE *f;
++	a16_rom_loaded=1;
++	if (a16_rom_path) strcpy(path,a16_rom_path);
++	else strcat(strcpy(path,session_path),"arnold16.rom");
++	if (!(f=fopen(path,"rb")))
++		{ fprintf(stderr,"arnold16: cannot open boot ROM %s\n",path); return; }
++	if (fread(a16_rom,1,A16_ROM_SIZE,f)<8)
++		fprintf(stderr,"arnold16: boot ROM %s is too short\n",path);
++	fclose(f);
++}
++
++void a16_start(void) // RUN went from 0 to 1: the 68000 leaves reset
++{
++	if (!a16_rom_loaded) a16_rom_load();
++	if (a16_serial_path&&!a16_serial) a16_serial=fopen(a16_serial_path,"wb");
++	if (!a16_cpu_ready)
++		m68k_init(),m68k_set_cpu_type(M68K_CPU_TYPE_68000),a16_cpu_ready=1;
++	memset(a16_ram,0,sizeof(a16_ram)); memset(a16_vram,0,sizeof(a16_vram));
++	m68k_pulse_reset(); a16_cycles=0; a16_irq();
++}
++
++void a16_reset(void) // a CPC reset always returns the machine to a plain CPC
++{
++	a16_ctrl=a16_to68k_full=a16_from68k_full=0;
++	a16_to68k_cmd=a16_from68k_cmd=0;
++	memset(a16_to68k_data,0,4); memset(a16_from68k_data,0,4);
++	a16_irq();
++}
++
++#define a16_port(p) (a16_enabled&&((p)&0xFFF8)==A16_PORT_BASE)
++
++void a16_send(int r,BYTE b) // the Z80 writes register `r` (0-7)
++{
++	switch (r)
++	{
++		case 1: // CTRL
++			b&=A16_CTRL_RUN|A16_CTRL_DISPLAY;
++			if (!(b&A16_CTRL_RUN)) // holding the 68000 in reset empties the mailbox
++				a16_to68k_full=a16_from68k_full=0;
++			else if (!(a16_ctrl&A16_CTRL_RUN))
++				a16_ctrl=b,a16_start();
++			a16_ctrl=b; a16_irq();
++			break;
++		case 3: // MBOX_CMD: send the command, with the data bytes written before it
++			a16_to68k_cmd=b,a16_to68k_full=1; a16_irq();
++			break;
++		case 4: case 5: case 6: case 7: // MBOX_DATA
++			a16_to68k_data[r-4]=b;
++			break;
++	}
++}
++
++BYTE a16_recv(int r) // the Z80 reads register `r` (0-7)
++{
++	switch (r)
++	{
++		case 0: // ID
++			return A16_ID;
++		case 1: // CTRL
++			return a16_ctrl;
++		case 2: // STATUS
++			return ((a16_ctrl&A16_CTRL_RUN)?A16_STAT_RUNNING:0)
++				+(a16_from68k_full?A16_STAT_FROM68K:0)
++				+(a16_to68k_full?A16_STAT_TO68K:0);
++		case 3: // MBOX_CMD: take the waiting command
++			a16_from68k_full=0;
++			return a16_from68k_cmd;
++		default: // MBOX_DATA
++			return a16_from68k_data[r-4];
++	}
++}
++
++void a16_main(int t) // the hardware catches up with the Z80: `t` ticks of the CPC's 4 MHz clock
++{
++	if (!a16_enabled||!(a16_ctrl&A16_CTRL_RUN)) return;
++	if ((a16_cycles+=t*A16_CYCLES_PER_TICK)>0)
++		a16_cycles-=m68k_execute(a16_cycles); // it may overshoot by part of an instruction
++}
++
++void a16_frame(void) // once per emulated frame
++{
++	if (a16_serial) fflush(a16_serial); // so a watcher of the file sees the output at once
++}
++
++void a16_exit(void)
++{
++	if (a16_serial) fclose(a16_serial),a16_serial=NULL;
++}
+diff --git a/cpcec.c b/cpcec.c
+index 5f79c9b..14a90f6 100644
+--- a/cpcec.c
++++ b/cpcec.c
+@@ -103,6 +103,7 @@ unsigned char audio_surround=0; // ditto
+ #define CB_PART 1
+ #include "cpcec-cb.h" // CPCBuild: unattended-run options
+ #include "cpcec-rt.h" // emulation framework!
++#include "cpcec-a16.h" // Arnold 16: ports and mailbox
+ 
+ int litegun=0; // 0 = standard joystick, 1 = Trojan Light Phaser, 2 = Gunstick (MHT), 3 = Westphaser (Loriciel)
+ const unsigned char kbd_map_xlt[]=
+@@ -1305,6 +1306,7 @@ void z80_sync(int t) // the Z80 asks the hardware/video/audio to catch up
+ 	{
+ 		if (audio_queue+=t,audio_dirty&&audio_required)
+ 			audio_main(audio_queue),audio_dirty=audio_queue=0;
++		a16_main(t); // Arnold 16: run the 68000 for the same stretch of time
+ 		video_main(t);
+ 	}
+ }
+@@ -1469,6 +1471,7 @@ void z80_send(WORD p,BYTE b) // the Z80 sends a byte to a hardware port
+ 			tape_output=tape_type<0&&(pio_port_c&32); // tape record signal
+ 		}
+ 	}
++	if (a16_port(p)) a16_send(p&7,b); // Arnold 16, 0xF9E0-0xF9E7
+ 	if (!(p&0x0400)) // 0xF800-0xFBFF, miscellaneous
+ 	{
+ 		if (!(p&0x0080)) // 0xFB7F, FDC 765
+@@ -2055,6 +2058,7 @@ BYTE z80_recv(WORD p) // the Z80 receives a byte from a hardware port
+ 		}
+ 		#endif
+ 	}
++	if (a16_port(p)) b&=a16_recv(p&7); // Arnold 16, 0xF9E0-0xF9E7
+ 	return p==0xFEFE?0xCE:b; // emulator ID styled after the old CPCE
+ }
+ 
+@@ -2478,6 +2482,7 @@ void all_reset(void) // reset everything!
+ 	MEMZERO(autorun_kbd);
+ 	crtc_reset();
+ 	plus_reset();
++	a16_reset(); // Arnold 16
+ 	gate_reset();
+ 	tape_reset();
+ 	disc_reset();
+@@ -3974,7 +3979,7 @@ void session_configwritemore(FILE *f) // update the configuration file `f` with
+ 
+ int main(int argc,char *argv[])
+ {
+-	cb_args(&argc,argv); session_prae(ARGVZERO); all_setup(); all_reset();
++	a16_args(&argc,argv); cb_args(&argc,argv); session_prae(ARGVZERO); all_setup(); all_reset();
+ 	int i=0,j,k=0; while (++i<argc)
+ 		if (argv[i][0]=='-')
+ 		{
+@@ -4210,7 +4215,7 @@ int main(int argc,char *argv[])
+ 				#endif
+ 				session_status();
+ 			}
+-			cb_frame();
++			cb_frame(); a16_frame();
+ 			// update session and continue
+ 			if (!--autorun_t) autorun_next();
+ 			dac_frame(); if (ym3_file) ym3_write(),ym3_flush();
+@@ -4238,7 +4243,7 @@ int main(int argc,char *argv[])
+ 	// it's over, "acta est fabula"
+ 	z80_close(); if (ext_rom) free(ext_rom);
+ 	disc_closeall();
+-	cb_exit(); tape_close(); ym3_close(); if (printer) printer_close();
++	cb_exit(); a16_exit(); tape_close(); ym3_close(); if (printer) printer_close();
+ 	return session_byebye(),session_post()|cb_status;
+ }
+ 
